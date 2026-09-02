@@ -1,0 +1,40 @@
+{
+  "name": "lumbre-cafe",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Experiencia e-commerce full-stack para una marca argentina ficticia de café de especialidad.",
+  "license": "MIT",
+  "homepage": "https://github.com/Gerodrix/lumbre-cafe",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gerodrix/lumbre-cafe.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && node scripts/build-worker.mjs",
+    "preview": "vite preview",
+    "test:worker": "node scripts/test-worker.mjs",
+    "check": "npm run build && npm run test:worker",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@openai/sites-vite-plugin": "^0.2.0",
+    "@types/leaflet": "^1.9.22",
+    "@vitejs/plugin-react": "latest",
+    "drizzle-orm": "^0.45.2",
+    "framer-motion": "latest",
+    "leaflet": "^1.9.4",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-leaflet": "^5.0.0",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "latest"
+  }
+}
