@@ -17,7 +17,9 @@ Una experiencia e-commerce full-stack para una marca argentina ficticia de café
 - Adaptador opcional para Mercado Pago, webhook firmado e idempotencia de eventos.
 - API ejecutada en Cloudflare Worker y persistencia en D1 mediante Drizzle ORM.
 - Panel de operaciones protegido para consultar pedidos y actualizar estados.
+- Rate limiting nativo en Cloudflare, validación de origen, comparación segura de credenciales y honeypot antispam.
 - Metadatos SEO, sitemap, robots, JSON-LD, accesibilidad y soporte para movimiento reducido.
+- Presupuesto automatizado de rendimiento para JavaScript, CSS e imagen principal.
 - Caso de estudio integrado para presentar decisiones de diseño y arquitectura en portfolio.
 
 ## Stack
@@ -91,7 +93,7 @@ La demo está publicada como una aplicación de Cloudflare Worker + D1. Para un 
 1. Un proyecto de Cloudflare y una base D1 enlazada como `DB`.
 2. Los secretos de runtime cargados en el proveedor, nunca incluidos en Git.
 3. `npm run build` como paso de compilación.
-4. `dist/worker.js` como Worker generado y `dist/client` como assets estáticos.
+4. `dist/server/index.js` como Worker generado y `dist/client` como assets estáticos.
 
 El workflow de GitHub Actions valida cada push y pull request. No publica automáticamente: el despliegue queda desacoplado para no exponer credenciales ni reemplazar un entorno existente por accidente.
 

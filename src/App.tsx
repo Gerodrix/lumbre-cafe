@@ -249,6 +249,8 @@ export function App() {
   const cartCloseRef = useRef<HTMLButtonElement>(null)
   const cartTriggerRef = useRef<HTMLButtonElement>(null)
   const handledEntryProduct = useRef(false)
+  const formStartedAt = useRef(Date.now())
+  const [website, setWebsite] = useState('')
   const selectedProduct = products.find((product) => product.id === selectedProductId) ?? products[0]
   const cartCount = Object.values(cart).reduce((total, quantity) => total + quantity, 0)
   const cartItems = products.filter((product) => cart[product.id]).map((product) => ({ product, quantity: cart[product.id] }))
@@ -359,6 +361,8 @@ export function App() {
           customer: { name: customerName, email: customerEmail, address: customerAddress },
           postalCode,
           items: cartItems.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+          startedAt: formStartedAt.current,
+          website,
         }),
       })
       const result = await response.json() as { orderNumber?: string; message?: string }
@@ -421,9 +425,10 @@ export function App() {
     if (!email.trim()) return
     setSubscribeState('submitting')
     try {
-      const response = await fetch('/api/newsletter', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) })
+      const response = await fetch('/api/newsletter', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, startedAt: formStartedAt.current, website }) })
       if (!response.ok) throw new Error('subscribe_failed')
       setSubscribeState('success')
+      formStartedAt.current = Date.now()
     } catch {
       setSubscribeState('error')
     }
@@ -602,7 +607,7 @@ export function App() {
             <p className="eyebrow">Cartas desde el tostadero</p>
             <h2>Ideas para tomar<br />el café más lento.</h2>
             {subscribeState === 'success' ? <p className="success"><Check /> Listo. La suscripción quedó registrada.</p> : (
-              <><form onSubmit={subscribe}><label className="sr-only" htmlFor="email">Tu email</label><input id="email" name="email" type="email" autoComplete="email" required placeholder="Tu email" value={email} onChange={(e) => setEmail(e.target.value)} /><button disabled={subscribeState === 'submitting'} aria-label="Suscribirme">{subscribeState === 'submitting' ? <span className="sr-only">Enviando</span> : <ArrowRight />}</button></form>{subscribeState === 'error' && <p className="field-error" role="alert">No pudimos registrar el email. Probá nuevamente.</p>}</>
+              <><form onSubmit={subscribe}><label className="sr-only" htmlFor="email">Tu email</label><input id="email" name="email" type="email" autoComplete="email" required placeholder="Tu email" value={email} onChange={(e) => setEmail(e.target.value)} /><label className="form-trap" aria-hidden="true">Sitio web<input name="website" type="text" autoComplete="off" tabIndex={-1} value={website} onChange={(event) => setWebsite(event.target.value)} /></label><button disabled={subscribeState === 'submitting'} aria-label="Suscribirme">{subscribeState === 'submitting' ? <span className="sr-only">Enviando</span> : <ArrowRight />}</button></form>{subscribeState === 'error' && <p className="field-error" role="alert">No pudimos registrar el email. Probá nuevamente.</p>}</>
             )}
           </div>
           <div className="footer-nav"><p>Explorar</p><a href="#origen">Nuestra historia</a><a href="#tienda">Cafés</a><a href="#ritual">Preparación</a><a href="#newsletter">Club Lumbre</a></div>
@@ -661,6 +666,7 @@ export function App() {
                     <label>Nombre<input name="name" autoComplete="name" required value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Nombre de prueba" /></label>
                     <label>Email<input name="email" autoComplete="email" required type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} placeholder="demo@example.com" /></label>
                     <label>Dirección<input name="address" autoComplete="street-address" required value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} placeholder="Dirección de demostración" /></label>
+                    <label className="form-trap" aria-hidden="true">Sitio web<input name="website" type="text" autoComplete="off" tabIndex={-1} value={website} onChange={(event) => setWebsite(event.target.value)} /></label>
                     <div className="cart-totals"><span>Productos <strong>${subtotal.toLocaleString('es-AR')}</strong></span><span>Envío <strong>{shippingQuote ? `$${shippingQuote.price.toLocaleString('es-AR')}` : 'A calcular'}</strong></span><span>Total estimado <strong>${total.toLocaleString('es-AR')}</strong></span></div>
                     <button className="button button-copper" disabled={!shippingQuote || orderSubmitting}>{orderSubmitting ? 'Guardando pedido…' : <>Crear pedido y continuar al pago <ArrowRight size={15} /></>}</button>
                     {orderError && <p className="field-error" role="alert">{orderError}</p>}

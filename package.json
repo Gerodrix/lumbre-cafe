@@ -15,14 +15,14 @@
     "build": "tsc -b && vite build && node scripts/build-worker.mjs",
     "preview": "vite preview",
     "test:worker": "node scripts/test-worker.mjs",
+    "test:quality": "node scripts/audit-build.mjs",
     "check:cloudflare": "wrangler deploy --dry-run",
-    "check": "npm run build && npm run test:worker && npm run check:cloudflare",
+    "check": "npm run build && npm run test:worker && npm run test:quality && npm run check:cloudflare",
     "db:generate": "drizzle-kit generate",
     "types:cloudflare": "wrangler types",
     "deploy:cloudflare": "npm run build && wrangler deploy --keep-vars"
   },
   "dependencies": {
-    "@openai/sites-vite-plugin": "^0.2.0",
     "@types/leaflet": "^1.9.22",
     "@vitejs/plugin-react": "latest",
     "drizzle-orm": "^0.45.2",

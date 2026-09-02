@@ -72,13 +72,22 @@ const call = (path, init) => worker.fetch(new Request(`https://lumbre.test${path
 
 let response = await call('/api/health')
 assert.equal(response.status, 200)
-assert.deepEqual(await response.json(), { ok: true, service: 'lumbre-store', persistence: true, payments: 'sandbox', webhooks: false, admin: true, version: 3 })
+assert.deepEqual(await response.json(), { ok: true, service: 'lumbre-store', persistence: true, payments: 'sandbox', webhooks: false, admin: true, version: 4 })
 
-response = await call('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ customer: { name: 'Ada Lovelace', email: 'ada@example.com', address: 'Calle Fuego 123' }, postalCode: '1414', items: [{ productId: 1, quantity: 2 }] }) })
+response = await call('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ customer: { name: 'Ada Lovelace', email: 'ada@example.com', address: 'Calle Fuego 123' }, postalCode: '1414', items: [{ productId: 1, quantity: 2 }], startedAt: Date.now() - 1000, website: '' }) })
 assert.equal(response.status, 201)
 const created = await response.json()
 assert.match(created.orderNumber, /^LUM-/)
 assert.equal(created.status, 'awaiting_payment')
+
+response = await call('/api/newsletter', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'bot@example.com', startedAt: Date.now() - 1000, website: 'spam.example' }) })
+assert.equal(response.status, 400)
+assert.equal(env.DB.subscribers.length, 0)
+
+const limitedEnv = { ...env, WRITE_RATE_LIMITER: { async limit() { return { success: false } } } }
+response = await worker.fetch(new Request('https://lumbre.test/api/newsletter', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'reader@example.com', startedAt: Date.now() - 1000, website: '' }) }), limitedEnv)
+assert.equal(response.status, 429)
+assert.equal(response.headers.get('retry-after'), '60')
 
 response = await call('/api/payments/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ orderNumber: created.orderNumber }) })
 assert.equal(response.status, 200)
@@ -118,10 +127,38 @@ assert.equal(response.status, 200)
 const adminHtml = await response.text()
 assert.match(adminHtml, /Panel de pedidos/)
 assert.match(adminHtml, /noindex,nofollow/)
+assert.doesNotMatch(adminHtml, /content="index, follow"/)
+
+response = await call('/cafes/quebrada', { headers: { accept: 'text/html' } })
+assert.equal(response.status, 200)
+const productHtml = await response.text()
+assert.match(productHtml, /<title>Quebrada — Café de origen \| Lumbre Café<\/title>/)
+assert.match(productHtml, /<link rel="canonical" href="https:\/\/lumbre\.test\/cafes\/quebrada">/)
+assert.match(productHtml, /Café Quebrada de Jujuy · Argentina/)
+assert.match(productHtml, /"@type":"Product"/)
+
+response = await call('/pagina-inexistente', { headers: { accept: 'text/html' } })
+assert.equal(response.status, 404)
+const notFoundHtml = await response.text()
+assert.match(notFoundHtml, /noindex,nofollow/)
+assert.match(notFoundHtml, /<link rel="canonical" href="https:\/\/lumbre\.test\/">/)
+
+response = await call('/sitemap.xml')
+assert.equal(response.status, 200)
+const sitemap = await response.text()
+assert.match(sitemap, /<lastmod>2026-09-02<\/lastmod>/)
+assert.match(sitemap, /https:\/\/lumbre\.test\/cafes\/niebla/)
+
+const assetEnv = { ...env, ASSETS: { async fetch() { return new Response('image', { headers: { 'content-type': 'image/webp' } }) } } }
+response = await worker.fetch(new Request('https://lumbre.test/images/lumbre-hero.webp'), assetEnv)
+assert.equal(response.headers.get('cache-control'), 'public, max-age=604800, stale-while-revalidate=86400')
+
+response = await call('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://malicious.example' }, body: JSON.stringify({}) })
+assert.equal(response.status, 403)
 
 const liveEnv = { DB: new FakeD1(), ADMIN_ACCESS_KEY: 'test-admin-key', MERCADO_PAGO_ACCESS_TOKEN: 'TEST-token', MERCADO_PAGO_WEBHOOK_SECRET: 'webhook-secret' }
 const liveCall = (path, init) => worker.fetch(new Request(`https://lumbre.test${path}`, init), liveEnv)
-response = await liveCall('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ customer: { name: 'Grace Hopper', email: 'grace@example.com', address: 'Pasaje Origen 42' }, postalCode: '1414', items: [{ productId: 2, quantity: 1 }] }) })
+response = await liveCall('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ customer: { name: 'Grace Hopper', email: 'grace@example.com', address: 'Pasaje Origen 42' }, postalCode: '1414', items: [{ productId: 2, quantity: 1 }], startedAt: Date.now() - 1000, website: '' }) })
 const liveOrder = await response.json()
 const originalFetch = globalThis.fetch
 globalThis.fetch = async (url) => String(url).includes('/checkout/preferences')

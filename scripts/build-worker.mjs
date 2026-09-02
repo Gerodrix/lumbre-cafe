@@ -48,12 +48,14 @@ function responseHeaders(type, cacheControl = 'no-cache') {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'strict-origin-when-cross-origin',
     'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains',
+    'cross-origin-opener-policy': 'same-origin',
     'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   }
 }
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: responseHeaders('application/json; charset=utf-8', 'no-store') })
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), { status, headers: { ...responseHeaders('application/json; charset=utf-8', 'no-store'), 'x-robots-tag': 'noindex', ...extraHeaders } })
 }
 
 function shippingQuote(postal) {
@@ -163,8 +165,62 @@ async function readJson(request) {
   return request.json()
 }
 
+async function constantTimeEqual(candidate, expected) {
+  const values = await Promise.all([candidate, expected].map(value => crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)))))
+  const left = new Uint8Array(values[0])
+  const right = new Uint8Array(values[1])
+  let difference = 0
+  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index]
+  return difference === 0
+}
+
+async function rateLimitKey(request, scope) {
+  const actor = (request.headers.get('cf-connecting-ip') || 'local') + '|' + (request.headers.get('user-agent') || 'unknown')
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(scope + '|' + actor)))
+  return scope + ':' + Array.from(digest.slice(0, 16), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function enforceRateLimit(binding, request, scope) {
+  if (!binding?.limit) return null
+  const { success } = await binding.limit({ key: await rateLimitKey(request, scope) })
+  return success ? null : json({ message: 'Demasiadas solicitudes. Esperá un minuto y volvé a intentar.' }, 429, { 'retry-after': '60' })
+}
+
+function trustedBrowserRequest(request, url) {
+  const origin = request.headers.get('origin')
+  const fetchSite = request.headers.get('sec-fetch-site')
+  return (!origin || origin === url.origin) && (!fetchSite || fetchSite === 'same-origin' || fetchSite === 'none')
+}
+
+function passesSpamTrap(body) {
+  const startedAt = Number(body?.startedAt)
+  const elapsed = Date.now() - startedAt
+  return !String(body?.website || '').trim() && Number.isFinite(startedAt) && elapsed >= 700 && elapsed <= 21600000
+}
+
+function withAssetCaching(response, pathname) {
+  if (!response.ok) return response
+  const headers = new Headers(response.headers)
+  if (pathname.startsWith('/assets/')) headers.set('cache-control', 'public, max-age=31536000, immutable')
+  else if (pathname.startsWith('/images/') || pathname.startsWith('/videos/')) headers.set('cache-control', 'public, max-age=604800, stale-while-revalidate=86400')
+  headers.set('x-content-type-options', 'nosniff')
+  headers.set('referrer-policy', 'strict-origin-when-cross-origin')
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+}
+
 async function handleApi(request, url, env) {
-  if (url.pathname === '/api/health' && request.method === 'GET') return json({ ok: true, service: 'lumbre-store', persistence: Boolean(env.DB), payments: env.MERCADO_PAGO_ACCESS_TOKEN ? 'mercado_pago' : 'sandbox', webhooks: Boolean(env.MERCADO_PAGO_WEBHOOK_SECRET), admin: Boolean(env.ADMIN_ACCESS_KEY), version: 3 })
+  if (!['GET', 'HEAD', 'POST', 'PATCH'].includes(request.method)) return json({ message: 'Método no permitido' }, 405, { allow: 'GET, HEAD, POST, PATCH' })
+  if (url.pathname === '/api/admin/session' && request.method === 'POST') {
+    const blocked = await enforceRateLimit(env.AUTH_RATE_LIMITER, request, 'admin-session')
+    if (blocked) return blocked
+  }
+  const publicWrite = request.method === 'POST' && ['/api/orders', '/api/payments/session', '/api/payments/sandbox', '/api/newsletter'].includes(url.pathname)
+  if (publicWrite) {
+    if (!trustedBrowserRequest(request, url)) return json({ message: 'Origen de solicitud no permitido' }, 403)
+    const blocked = await enforceRateLimit(env.WRITE_RATE_LIMITER, request, url.pathname)
+    if (blocked) return blocked
+  }
+  if (url.pathname === '/api/health' && request.method === 'GET') return json({ ok: true, service: 'lumbre-store', persistence: Boolean(env.DB), payments: env.MERCADO_PAGO_ACCESS_TOKEN ? 'mercado_pago' : 'sandbox', webhooks: Boolean(env.MERCADO_PAGO_WEBHOOK_SECRET), admin: Boolean(env.ADMIN_ACCESS_KEY), version: 4 })
   if (url.pathname === '/api/catalog' && request.method === 'GET') return json({ products: catalog.map(({ packshot, accent, movement, ...product }) => product), currency: 'ARS', updatedAt: '2026-09-01' })
   if (url.pathname === '/api/shipping/quote' && request.method === 'GET') {
     const quote = shippingQuote(url.searchParams.get('postal'))
@@ -175,7 +231,7 @@ async function handleApi(request, url, env) {
     if (!env.ADMIN_ACCESS_KEY) return json({ message: 'Panel no configurado' }, 503)
     let body
     try { body = await readJson(request) } catch { return json({ message: 'Solicitud inválida' }, 400) }
-    if (String(body?.key || '') !== env.ADMIN_ACCESS_KEY) return json({ message: 'Clave incorrecta' }, 401)
+    if (!await constantTimeEqual(String(body?.key || ''), env.ADMIN_ACCESS_KEY)) return json({ message: 'Clave incorrecta' }, 401)
     return json({ token: await createAdminToken(env.ADMIN_ACCESS_KEY), expiresIn: 7200 })
   }
 
@@ -210,6 +266,7 @@ async function handleApi(request, url, env) {
     if (!await ensureDatabase(env.DB)) return json({ message: 'Persistencia no disponible' }, 503)
     let body
     try { body = await readJson(request) } catch { return json({ message: 'Solicitud inválida' }, 400) }
+    if (!passesSpamTrap(body)) return json({ message: 'No pudimos validar el formulario' }, 400)
     const customer = body?.customer || {}
     const email = String(customer.email || '').trim().toLowerCase()
     const name = String(customer.name || '').trim()
@@ -341,6 +398,7 @@ async function handleApi(request, url, env) {
     if (!await ensureDatabase(env.DB)) return json({ message: 'Persistencia no disponible' }, 503)
     let body
     try { body = await readJson(request) } catch { return json({ message: 'Solicitud inválida' }, 400) }
+    if (!passesSpamTrap(body)) return json({ message: 'No pudimos validar el formulario' }, 400)
     const email = String(body?.email || '').trim().toLowerCase()
     if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || email.length > 160) return json({ message: 'Email inválido' }, 400)
     await env.DB.prepare('INSERT OR IGNORE INTO newsletter_subscribers (id, email, source, created_at) VALUES (?, ?, ?, ?)').bind(crypto.randomUUID(), email, 'landing_footer', Math.floor(Date.now() / 1000)).run()
@@ -364,6 +422,7 @@ function renderHtml(pathname, siteOrigin) {
   const description = product ? product.description : isAdmin ? 'Panel privado de demostración para gestionar pedidos y estados de pago.' : isProject ? 'Caso de estudio full-stack: dirección de arte, e-commerce, APIs, persistencia, accesibilidad y SEO técnico.' : isPrivacy ? 'Información sobre el uso de datos en la demostración de e-commerce Lumbre Café.' : 'Cafés de origen tostados en pequeños lotes en Buenos Aires. Una invitación a preparar el día con más calma.'
   const canonical = siteOrigin + (isKnown ? pathname : '/')
   const image = siteOrigin + (product ? product.image : '/images/lumbre-hero.webp')
+  const imageAlt = product ? 'Café ' + product.name + ' de ' + product.origin : 'Café Lumbre, taza de cerámica y granos bajo la luz de la mañana'
   const structured = product ? {
     '@context': 'https://schema.org', '@type': 'Product', name: product.name, sku: product.sku, image, description: product.description,
     brand: { '@type': 'Brand', name: 'Lumbre Café' },
@@ -373,7 +432,7 @@ function renderHtml(pathname, siteOrigin) {
     description, inLanguage: 'es-AR', creator: { '@type': 'Organization', name: 'Lumbre Café' }, image,
   } : {
     '@context': 'https://schema.org', '@graph': [
-      { '@type': 'Organization', '@id': siteOrigin + '/#organization', name: 'Lumbre Café', url: siteOrigin, logo: siteOrigin + '/images/lumbre-pouch-quebrada-v2.webp', email: 'hola@lumbrecafe.ar' },
+      { '@type': 'Organization', '@id': siteOrigin + '/#organization', name: 'Lumbre Café', url: siteOrigin, logo: siteOrigin + '/images/lumbre-pouch-quebrada-v2.webp', address: { '@type': 'PostalAddress', addressLocality: 'Buenos Aires', addressCountry: 'AR' } },
       { '@type': 'WebSite', '@id': siteOrigin + '/#website', name: 'Lumbre Café', url: siteOrigin, inLanguage: 'es-AR', publisher: { '@id': siteOrigin + '/#organization' } },
       { '@type': 'ItemList', name: 'Cafés de temporada', itemListElement: catalog.map((item, index) => ({ '@type': 'ListItem', position: index + 1, url: siteOrigin + '/cafes/' + item.slug, name: item.name })) },
     ],
@@ -386,11 +445,13 @@ function renderHtml(pathname, siteOrigin) {
   html = html.replace(/<meta property="og:description"[^>]*>/, '<meta property="og:description" content="' + escapeHtml(description) + '">')
   html = html.replace(/<meta property="og:url"[^>]*>/, '<meta property="og:url" content="' + escapeHtml(canonical) + '">')
   html = html.replace(/<meta property="og:image"[^>]*>/, '<meta property="og:image" content="' + escapeHtml(image) + '">')
+  html = html.replace(/<meta property="og:image:alt"[^>]*>/, '<meta property="og:image:alt" content="' + escapeHtml(imageAlt) + '">')
   html = html.replace(/<meta name="twitter:title"[^>]*>/, '<meta name="twitter:title" content="' + escapeHtml(title) + '">')
   html = html.replace(/<meta name="twitter:description"[^>]*>/, '<meta name="twitter:description" content="' + escapeHtml(description) + '">')
   html = html.replace(/<meta name="twitter:image"[^>]*>/, '<meta name="twitter:image" content="' + escapeHtml(image) + '">')
+  html = html.replace(/<meta name="twitter:image:alt"[^>]*>/, '<meta name="twitter:image:alt" content="' + escapeHtml(imageAlt) + '">')
   html = html.replace('</head>', '<link rel="canonical" href="' + escapeHtml(canonical) + '"><script id="structured-data" type="application/ld+json">' + JSON.stringify(structured).replace(/</g, '\\u003c') + '</script></head>')
-  if (!isKnown || isAdmin) html = html.replace('</head>', '<meta name="robots" content="noindex,nofollow"></head>')
+  if (!isKnown || isAdmin) html = html.replace(/<meta name="robots"[^>]*>/, '<meta name="robots" content="noindex,nofollow">')
   return { html, status: isKnown ? 200 : 404 }
 }
 
@@ -404,7 +465,7 @@ export default {
     if (url.pathname === '/sitemap.xml') {
       const paths = ['/', ...catalog.map(item => '/cafes/' + item.slug), '/proyecto', '/privacidad']
       const body = '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\\n' +
-        paths.map(path => '  <url><loc>' + url.origin + path + '</loc></url>').join('\\n') + '\\n</urlset>'
+        paths.map((path, index) => '  <url><loc>' + url.origin + path + '</loc><lastmod>2026-09-02</lastmod><changefreq>' + (path === '/' ? 'weekly' : 'monthly') + '</changefreq><priority>' + (path === '/' ? '1.0' : index <= catalog.length ? '0.8' : '0.5') + '</priority></url>').join('\\n') + '\\n</urlset>'
       return new Response(body, { headers: responseHeaders('application/xml; charset=utf-8', 'public, max-age=3600') })
     }
     const acceptsHtml = request.headers.get('accept')?.includes('text/html')
@@ -414,7 +475,7 @@ export default {
       return new Response(rendered.html, { status: rendered.status, headers: responseHeaders('text/html; charset=utf-8') })
     }
 
-    return env.ASSETS.fetch(request)
+    return withAssetCaching(await env.ASSETS.fetch(request), url.pathname)
   }
 }
 `
