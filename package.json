@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Experiencia e-commerce full-stack para una marca argentina ficticia de café de especialidad.",
   "license": "MIT",
-  "homepage": "https://github.com/Gerodrix/lumbre-cafe",
+  "homepage": "https://lumbre-cafe.odriozolageronimo.workers.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/Gerodrix/lumbre-cafe.git"
@@ -15,8 +15,11 @@
     "build": "tsc -b && vite build && node scripts/build-worker.mjs",
     "preview": "vite preview",
     "test:worker": "node scripts/test-worker.mjs",
-    "check": "npm run build && npm run test:worker",
-    "db:generate": "drizzle-kit generate"
+    "check:cloudflare": "wrangler deploy --dry-run",
+    "check": "npm run build && npm run test:worker && npm run check:cloudflare",
+    "db:generate": "drizzle-kit generate",
+    "types:cloudflare": "wrangler types",
+    "deploy:cloudflare": "npm run build && wrangler deploy --keep-vars"
   },
   "dependencies": {
     "@openai/sites-vite-plugin": "^0.2.0",
@@ -32,9 +35,11 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260902.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "drizzle-kit": "^0.31.10",
-    "typescript": "latest"
+    "typescript": "latest",
+    "wrangler": "^4.128.0"
   }
 }

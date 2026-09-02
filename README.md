@@ -4,7 +4,7 @@
 
 Una experiencia e-commerce full-stack para una marca argentina ficticia de café de especialidad. El proyecto combina dirección de arte editorial, narrativa de producto, animación y un flujo de compra demostrable sobre una arquitectura preparada para Cloudflare.
 
-Demo pública en preparación · El código completo y el caso de estudio viven en este repositorio.
+[Ver demo](https://lumbre-cafe.odriozolageronimo.workers.dev) · [Leer el caso de estudio](https://lumbre-cafe.odriozolageronimo.workers.dev/proyecto)
 
 > La marca y el catálogo son conceptuales. El checkout usa un entorno de demostración y no procesa cobros reales sin credenciales externas configuradas.
 

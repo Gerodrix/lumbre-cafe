@@ -1,8 +1,8 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { extname, join, relative, sep } from 'node:path'
 
-const publicFiles = ['index.html', 'assets', 'images', 'videos', 'robots.txt', 'sitemap.xml']
-const allowedExtensions = new Set(['.html', '.css', '.js', '.webp', '.png', '.mp4', '.txt', '.xml'])
+const publicFiles = ['index.html']
+const allowedExtensions = new Set(['.html'])
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.webp': 'image/webp', '.png': 'image/png', '.mp4': 'video/mp4', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml; charset=utf-8',
@@ -19,7 +19,7 @@ async function collect(path) {
 
 const sourceFiles = []
 for (const entry of publicFiles) {
-  const path = join('dist', entry)
+  const path = join('dist', 'client', entry)
   if (entry.includes('.')) sourceFiles.push(path)
   else sourceFiles.push(...await collect(path))
 }
@@ -28,7 +28,7 @@ const manifest = {}
 for (const path of sourceFiles) {
   const extension = extname(path)
   if (!allowedExtensions.has(extension)) continue
-  const urlPath = `/${relative('dist', path).split(sep).join('/')}`
+  const urlPath = `/${relative(join('dist', 'client'), path).split(sep).join('/')}`
   manifest[urlPath] = { body: (await readFile(path)).toString('base64'), type: mimeTypes[extension] }
 }
 
@@ -398,20 +398,23 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     if (url.pathname.startsWith('/api/')) return handleApi(request, url, env)
-    const acceptsHtml = request.headers.get('accept')?.includes('text/html')
-    const asset = files[url.pathname]
-
-    if (asset) {
-      const immutable = url.pathname.startsWith('/assets/') || /\\.(webp|png|mp4)$/.test(url.pathname)
-      return new Response(decode(asset.body), { headers: responseHeaders(asset.type, immutable ? 'public, max-age=31536000, immutable' : 'no-cache') })
+    if (url.pathname === '/robots.txt') {
+      return new Response('User-agent: *\\nAllow: /\\nSitemap: ' + url.origin + '/sitemap.xml\\n', { headers: responseHeaders('text/plain; charset=utf-8', 'public, max-age=3600') })
     }
+    if (url.pathname === '/sitemap.xml') {
+      const paths = ['/', ...catalog.map(item => '/cafes/' + item.slug), '/proyecto', '/privacidad']
+      const body = '<?xml version="1.0" encoding="UTF-8"?>\\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\\n' +
+        paths.map(path => '  <url><loc>' + url.origin + path + '</loc></url>').join('\\n') + '\\n</urlset>'
+      return new Response(body, { headers: responseHeaders('application/xml; charset=utf-8', 'public, max-age=3600') })
+    }
+    const acceptsHtml = request.headers.get('accept')?.includes('text/html')
 
     if (acceptsHtml) {
       const rendered = renderHtml(url.pathname.replace(/\\/$/, '') || '/', url.origin)
       return new Response(rendered.html, { status: rendered.status, headers: responseHeaders('text/html; charset=utf-8') })
     }
 
-    return new Response('Not found', { status: 404, headers: responseHeaders('text/plain; charset=utf-8') })
+    return env.ASSETS.fetch(request)
   }
 }
 `
