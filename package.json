@@ -23,23 +23,23 @@
     "deploy:cloudflare": "npm run build && wrangler deploy --keep-vars"
   },
   "dependencies": {
-    "@types/leaflet": "^1.9.22",
-    "@vitejs/plugin-react": "latest",
-    "drizzle-orm": "^0.45.2",
-    "framer-motion": "latest",
-    "leaflet": "^1.9.4",
-    "lucide-react": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "react-leaflet": "^5.0.0",
-    "vite": "latest"
+    "@types/leaflet": "1.9.22",
+    "@vitejs/plugin-react": "6.1.1",
+    "drizzle-orm": "0.45.2",
+    "framer-motion": "13.1.1",
+    "leaflet": "1.9.4",
+    "lucide-react": "1.39.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-leaflet": "5.0.0",
+    "vite": "8.2.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260902.1",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "drizzle-kit": "^0.31.10",
-    "typescript": "latest",
-    "wrangler": "^4.128.0"
+    "@cloudflare/workers-types": "5.20260902.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "drizzle-kit": "0.31.10",
+    "typescript": "7.0.2",
+    "wrangler": "4.128.0"
   }
 }

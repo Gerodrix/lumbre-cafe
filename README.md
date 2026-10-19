@@ -56,7 +56,7 @@ El frontend y la API se sirven desde el mismo origen. Si no se configuran creden
 Requisitos: Node.js 22 o superior y npm.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -100,3 +100,7 @@ El workflow de GitHub Actions valida cada push y pull request. No publica autom�
 ## Autoría y uso
 
 Diseño y desarrollo por [Gerodrix](https://github.com/Gerodrix). Proyecto de portfolio distribuido bajo licencia MIT.
+
+## Contribuir
+
+Ver [CONTRIBUTING.md](CONTRIBUTING.md).
